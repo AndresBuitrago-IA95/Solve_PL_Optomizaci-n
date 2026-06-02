@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { RawConfig, ExamplePreset } from '../types';
 import { PRESETS } from '../data';
-import { Settings2, Plus, Minus, Calculator, RotateCcw, BookOpen, AlertCircle, Sparkles } from 'lucide-react';
+import { Settings2, Plus, Minus, Calculator, RotateCcw, BookOpen, AlertCircle, Sparkles, Key, Eye, EyeOff } from 'lucide-react';
+import { GoogleGenAI, Type } from '@google/genai';
 
 interface FormularioProps {
   onSolve: (config: RawConfig) => void;
@@ -17,6 +18,108 @@ export default function Formulario({ onSolve, onReset, config, setConfig }: Form
   const [nlpError, setNlpError] = useState<string | null>(null);
   const [nlpSuccess, setNlpSuccess] = useState<boolean>(false);
 
+  // Client-side Gemini API key states
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [showApiKeyInput, setShowApiKeyInput] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
+  useEffect(() => {
+    const savedKey = localStorage.getItem('NETLIFY_GEMINI_API_KEY') || '';
+    if (savedKey) {
+      setApiKeyInput(savedKey);
+    }
+  }, []);
+
+  const saveApiKey = (key: string) => {
+    setApiKeyInput(key);
+    localStorage.setItem('NETLIFY_GEMINI_API_KEY', key);
+  };
+
+  const callClientSideParse = async (text: string, apiKeyToUse: string) => {
+    const ai = new GoogleGenAI({ apiKey: apiKeyToUse });
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: `Analiza el siguiente problema de programación lineal de entrada y extrae la función objetivo y las restricciones estructurales.
+Reglas clave:
+- Identifica las variables principales de decisión (generalmente representadas por X1, X2, etc., o definidas implícitamente por los productos, ej: mesas, sillas). Asigna X1, X2, X3, etc. en orden de aparición o relevancia.
+- Determina el número total de variables de decisión ('numVars'). No debe exceder las 6 variables (preferiblemente de 2 a 4).
+- Determina el tipo de función: 'max' o 'min'.
+- Extrae los coeficientes de la función objetivo como un array de strings ('objective') alineados con X1, X2...
+- Extrae cada restricción estructural de la siguiente manera:
+  - 'coeffs': array de coeficientes correspondientes a cada variable de decisión. Si una variable no participa en la restricción, su coeficiente debe ser exactamente "0".
+  - 'type': la desigualdad o relación (<=' | '>=' | '=').
+  - 'rhs': el lado derecho ("right hand side") de la restricción como string de número entero, decimal o fraccionario.
+- No incluyas restricciones de no negatividad (X_i >= 0) como restricciones estructurales (se manejan de forma implícita).
+- Los coeficientes y números pueden representarse como enteros (ej: "3"), decimales (ej: "1.5") o fracciones (ej: "2/3").
+
+Problema a parsear:
+"${text}"`,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            type: {
+              type: Type.STRING,
+              description: "Tipo de optimización: 'max' para maximizar, 'min' para minimizar Z",
+            },
+            numVars: {
+              type: Type.INTEGER,
+              description: "El número total de variables de decisión identificadas (ej. 2, 3, 4, etc.)",
+            },
+            objective: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: "Los coeficientes de las variables de decisión en la función objetivo, ej: ['3', '5'] para Z = 3X1 + 5X2",
+            },
+            constraints: {
+              type: Type.ARRAY,
+              description: "La lista de restricciones estructurales encontradas en el problema",
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  coeffs: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING },
+                    description: "Los coeficientes de cada variable en la restricción en orden X1, X2, X3... (debe tener el mismo tamaño que numVars)",
+                  },
+                  type: {
+                     type: Type.STRING,
+                    description: "El operador de la restricción: '<=' para menor o igual, '>=' para mayor o igual, '=' para igualdad",
+                  },
+                  rhs: {
+                    type: Type.STRING,
+                    description: "El lado derecho (RHS) de la restricción",
+                  },
+                },
+                required: ["coeffs", "type", "rhs"],
+              },
+            },
+          },
+          required: ["type", "numVars", "objective", "constraints"],
+        },
+      },
+    });
+
+    let rawText = response.text?.trim() || "{}";
+    // Strip markdown JSON code fence backticks if present
+    if (rawText.startsWith("```json")) {
+      rawText = rawText.substring(7);
+      if (rawText.endsWith("```")) {
+        rawText = rawText.substring(0, rawText.length - 3);
+      }
+      rawText = rawText.trim();
+    } else if (rawText.startsWith("```")) {
+      rawText = rawText.substring(3);
+      if (rawText.endsWith("```")) {
+        rawText = rawText.substring(0, rawText.length - 3);
+      }
+      rawText = rawText.trim();
+    }
+
+    return JSON.parse(rawText);
+  };
+
   const handleNlpParse = async () => {
     if (!nlpText.trim()) {
       setNlpError("Por favor, introduce el texto del problema.");
@@ -26,7 +129,9 @@ export default function Formulario({ onSolve, onReset, config, setConfig }: Form
     setNlpError(null);
     setNlpSuccess(false);
 
+    let data;
     try {
+      // Intentar primero el endpoint de backend Express (por ejemplo, en el entorno local u host completo)
       const response = await fetch('/api/parse-lp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -34,17 +139,45 @@ export default function Formulario({ onSolve, onReset, config, setConfig }: Form
       });
 
       if (!response.ok) {
-        let errorMsgFromResponse = 'Error al procesar el texto con IA. Verifica tu conexión o reintenta.';
+        let errorMsgFromResponse = 'Server error response';
         try {
           const errData = await response.json();
           if (errData && errData.error) {
-            errorMsgFromResponse = `Error de IA: ${errData.error}`;
+            errorMsgFromResponse = errData.error;
           }
         } catch (_) {}
         throw new Error(errorMsgFromResponse);
       }
 
-      const data = await response.json();
+      data = await response.json();
+    } catch (err: any) {
+      console.warn("Fallo el endpoint del servidor (normal en hosts estáticos o Netlify). Intentando cliente-side con API Key local...", err);
+      
+      const apiKeyToUse = apiKeyInput.trim() || ((import.meta as any).env.VITE_GEMINI_API_KEY || '').trim();
+      if (!apiKeyToUse) {
+        setNlpError(
+          "El servidor de análisis con IA no está disponible o la aplicación se ejecuta de manera estática (como en Netlify). " +
+          "Para activar la formulación por IA en entornos de hosting estático, se requiere que especifiques una API Key de Gemini. " +
+          "Por favor, ingresa tu API Key en la sección 'Configurar API Key' abajo para usar Gemini directamente desde tu navegador de forma gratuita y segura."
+        );
+        setShowApiKeyInput(true);
+        setNlpLoading(false);
+        return;
+      }
+
+      try {
+        data = await callClientSideParse(nlpText, apiKeyToUse);
+      } catch (clientErr: any) {
+        console.error("Error en llamada Gemini cliente-side:", clientErr);
+        setNlpError(
+          `Error al llamar a la API de Gemini desde el cliente: ${clientErr.message || "Verifica tu API Key e intenta nuevamente."}`
+        );
+        setNlpLoading(false);
+        return;
+      }
+    }
+
+    try {
       if (data.error) {
         throw new Error(data.error);
       }
@@ -327,6 +460,71 @@ export default function Formulario({ onSolve, onReset, config, setConfig }: Form
             <span>¡Modelo extraído y cargado con éxito en los formularios inferiores!</span>
           </div>
         )}
+
+        {/* Configuración de API Key para hosts estáticos (como Netlify) */}
+        <div className="border-t border-[#2D2140]/60 pt-3.5 mt-2">
+          <button
+            type="button"
+            onClick={() => setShowApiKeyInput(!showApiKeyInput)}
+            className="text-[10px] text-zinc-400 hover:text-zinc-200 font-mono flex items-center gap-1.5 transition-all outline-none cursor-pointer"
+          >
+            <Key className="w-3.5 h-3.5 text-[#BD93F9]" />
+            <span>Configurar API Key de Gemini {apiKeyInput ? '✓' : '(Especial para Netlify)'}</span>
+            <span className="text-[9px] text-[#BD93F9]/70">[{showApiKeyInput ? 'Ocultar' : 'Mostrar'}]</span>
+          </button>
+
+          {showApiKeyInput && (
+            <div className="mt-3 bg-[#110D1D] border border-[#BD93F9]/20 rounded-lg p-3.5 space-y-2.5">
+              <p className="text-[10px] text-zinc-400 leading-relaxed font-sans">
+                Esta aplicación está alojada como servidor de archivos estáticos en esta URL (con Netlify).
+                Dado que los hostings estáticos no tienen servidor activo de Node.js, para poder usar la 
+                Inteligencia Artificial de Gemini, ingresa tu propia <strong>API Key</strong> de forma local. Tu clave se 
+                guardará de manera segura solo dentro de tu propio navegador.
+              </p>
+              
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={apiKeyInput}
+                    onChange={(e) => saveApiKey(e.target.value)}
+                    placeholder="Escribe tu API Key (AIzaSy...)"
+                    className="w-full text-xs font-mono pr-8 pl-3 py-1.5 bg-[#08060F] border border-[#2D2140] hover:border-[#BD93F9]/30 focus:border-[#BD93F9] outline-none text-zinc-200 placeholder-zinc-700 transition-all rounded-md focus:ring-1 focus:ring-[#BD93F9]/40"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 hover:text-white text-zinc-600 transition-colors cursor-pointer"
+                  >
+                    {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+                
+                {apiKeyInput && (
+                  <button
+                    type="button"
+                    onClick={() => saveApiKey('')}
+                    className="px-2.5 py-1.5 bg-[#200A10] hover:bg-[#321019] text-[#FF8585] border border-[#C53030]/25 rounded-md text-[10px] font-mono transition-all cursor-pointer"
+                  >
+                    Eliminar
+                  </button>
+                )}
+              </div>
+
+              <div className="text-[9px] text-zinc-500 font-sans flex justify-between items-center flex-wrap gap-2">
+                <span>¿No sabes cómo obtener tu clave? Es totalmente gratis:</span>
+                <a 
+                  href="https://aistudio.google.com/" 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="text-[#BD93F9] hover:text-[#D5B8FF] hover:underline font-mono"
+                >
+                  Obtener API Key Gratis ↗
+                </a>
+              </div>
+            </div>
+          )}
+        </div>
 
         <div className="flex justify-end pt-1">
           <button
