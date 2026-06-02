@@ -41,7 +41,7 @@ export default function App() {
       const result = solver.solve();
       setCurrentResult(result);
       
-      // Auto-switch tab to simplex on success
+      // Auto-switch to the simplex solutions tab on success
       setActiveTab('simplex');
     } catch (err: any) {
       console.error(err);

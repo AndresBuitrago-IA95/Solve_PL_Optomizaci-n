@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { RawConfig, ExamplePreset } from '../types';
 import { PRESETS } from '../data';
-import { Settings2, Plus, Minus, Calculator, RotateCcw, BookOpen, AlertCircle } from 'lucide-react';
+import { Settings2, Plus, Minus, Calculator, RotateCcw, BookOpen, AlertCircle, Sparkles } from 'lucide-react';
 
 interface FormularioProps {
   onSolve: (config: RawConfig) => void;
@@ -12,6 +12,74 @@ interface FormularioProps {
 
 export default function Formulario({ onSolve, onReset, config, setConfig }: FormularioProps) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [nlpText, setNlpText] = useState('');
+  const [nlpLoading, setNlpLoading] = useState(false);
+  const [nlpError, setNlpError] = useState<string | null>(null);
+  const [nlpSuccess, setNlpSuccess] = useState<boolean>(false);
+
+  const handleNlpParse = async () => {
+    if (!nlpText.trim()) {
+      setNlpError("Por favor, introduce el texto del problema.");
+      return;
+    }
+    setNlpLoading(true);
+    setNlpError(null);
+    setNlpSuccess(false);
+
+    try {
+      const response = await fetch('/api/parse-lp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: nlpText }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Error al procesar el texto con IA. Verifica tu conexión o reintenta.');
+      }
+
+      const data = await response.json();
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      const parsedNumVars = Math.min(6, Math.max(2, Number(data.numVars) || 2));
+
+      // Build safe arrays
+      const paddedObj = Array.from({ length: parsedNumVars }, (_, idx) => {
+        return (data.objective && data.objective[idx] !== undefined) ? String(data.objective[idx]) : '0';
+      });
+
+      const safeConstraints = (data.constraints || []).map((c: any) => {
+        const paddedCoeffs = Array.from({ length: parsedNumVars }, (_, idx) => {
+          return (c.coeffs && c.coeffs[idx] !== undefined) ? String(c.coeffs[idx]) : '0';
+        });
+        return {
+          coeffs: paddedCoeffs,
+          type: (c.type === '<=' || c.type === '>=' || c.type === '=') ? c.type : '<=',
+          rhs: String(c.rhs || '0')
+        };
+      });
+
+      setConfig({
+        type: data.type === 'min' ? 'min' : 'max',
+        numVars: parsedNumVars,
+        objective: paddedObj,
+        constraints: safeConstraints.length > 0 ? safeConstraints : [{
+          coeffs: Array.from({ length: parsedNumVars }, () => '0'),
+          type: '<=',
+          rhs: '0'
+        }]
+      });
+
+      setNlpSuccess(true);
+      setErrorMsg(null);
+    } catch (err: any) {
+      console.error(err);
+      setNlpError(err.message || "No se ha podido procesar el problema. Inténtalo de nuevo describiéndolo con más detalle.");
+    } finally {
+      setNlpLoading(false);
+    }
+  };
 
   // When variable count changes, adjust raw objective array length
   const handleVarCountChange = (newCount: number) => {
@@ -184,6 +252,97 @@ export default function Formulario({ onSolve, onReset, config, setConfig }: Form
               </p>
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* NLP IA PROBLEM PARSER */}
+      <div className="bg-[#120F1F]/45 border border-[#BD93F9]/25 rounded-xl p-5 shadow-sm space-y-4">
+        <div className="flex items-center justify-between gap-2 border-b border-[#2D2140] pb-3">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-[#BD93F9]" />
+            <h4 className="font-bold text-sm text-white font-mono uppercase tracking-wide">
+              Formular con Inteligencia Artificial (Texto a Modelo)
+            </h4>
+          </div>
+          <span className="text-[9px] bg-[#BD93F9]/15 text-[#BD93F9] border border-[#BD93F9]/30 px-2 py-0.5 rounded font-mono font-bold tracking-wider">
+            GEMINI IA
+          </span>
+        </div>
+
+        <p className="text-xs text-zinc-400 font-sans leading-relaxed">
+          Escribe o pega el enunciado de tu problema (en lenguaje natural o ecuaciones legibles), y la IA extraerá de forma automática la función objetivo y las restricciones estructurales.
+        </p>
+
+        <textarea
+          rows={3}
+          value={nlpText}
+          onChange={(e) => setNlpText(e.target.value)}
+          placeholder="Escribe aquí tu problema... Ej: Maximizar Z = 20X1 + 30X2 + 10X3 sujeto a 3X1 + 2X2 <= 240, X1 + 2X2 + 4X3 <= 300, y no negatividad."
+          className="w-full text-zinc-200 placeholder-zinc-600 outline-none text-xs font-mono bg-[#111115] border border-[#2D2140] hover:border-[#BD93F9]/40 focus:border-[#BD93F9] transition-all rounded-lg p-3.5 leading-relaxed focus:ring-1 focus:ring-[#BD93F9]/50"
+        />
+
+        {/* Quick Suggestions / Frases de ejemplo */}
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-zinc-500 font-mono text-[10px]">Cargar ejemplos:</span>
+          <button
+            type="button"
+            className="text-[10px] bg-[#16161C] border border-[#262635] text-zinc-400 hover:text-[#BD93F9] hover:border-[#BD93F9]/30 px-2.5 py-1 rounded transition-all cursor-pointer font-sans"
+            onClick={() => setNlpText("Una fábrica de juguetes produce trenes y pelotas. Cada tren da una ganancia de $10 y cada pelota $8. Un tren requiere 2 horas de mecanizado y 1 hora de montaje. Una pelota requiere 1 hora de mecanizado y 3 horas de montaje. Se dispone de 40 horas de mecanizado y 60 horas de montaje por semana. Maximiza la utilidad total.")}
+          >
+            Fábrica de Juguetes (2 var)
+          </button>
+          <button
+            type="button"
+            className="text-[10px] bg-[#16161C] border border-[#262635] text-zinc-400 hover:text-[#BD93F9] hover:border-[#BD93F9]/30 px-2.5 py-1 rounded transition-all cursor-pointer font-sans"
+            onClick={() => setNlpText("Minimizar el costo de una mezcla de alimento para granja. El alimento A cuesta $3 el kg y contiene 5% de ingrediente X, 10% de ingrediente Y. El alimento B cuesta $5 el kg y contiene 12% de ingrediente X, 8% de ingrediente Y. El requirimiento diario es de al menos 60g de ingrediente X y 45g de ingrediente Y. Formular el modelo.")}
+          >
+            Mezcla de Alimentos (2 var)
+          </button>
+          <button
+            type="button"
+            className="text-[10px] bg-[#16161C] border border-[#262635] text-zinc-400 hover:text-[#BD93F9] hover:border-[#BD93F9]/30 px-2.5 py-1 rounded transition-all cursor-pointer font-sans"
+            onClick={() => setNlpText("Maximizar beneficio Z = 15X1 + 25X2 + 18X3 sujeto a las siguientes restricciones: R1: X1 + 2X2 + X3 <= 100, R2: 2X1 + X2 + 3X3 <= 150, R3: X1 + X3 <= 80.")}
+          >
+            Ecuaciones directas (3 var)
+          </button>
+        </div>
+
+        {nlpError && (
+          <div className="flex items-center gap-2 p-3 bg-[#2A1015] border border-[#C53030]/40 text-[#FF8585] rounded-lg text-xs font-mono">
+            <AlertCircle className="w-4 h-4 shrink-0 text-[#FF4949]" />
+            <span>{nlpError}</span>
+          </div>
+        )}
+
+        {nlpSuccess && (
+          <div className="flex items-center gap-2 p-3 bg-[#102A1E] border border-[#1FA264]/40 text-[#00FF9C] rounded-lg text-xs font-mono">
+            <Sparkles className="w-4 h-4 shrink-0 text-[#00FF9C]" />
+            <span>¡Modelo extraído y cargado con éxito en los formularios inferiores!</span>
+          </div>
+        )}
+
+        <div className="flex justify-end pt-1">
+          <button
+            type="button"
+            onClick={handleNlpParse}
+            disabled={nlpLoading}
+            className="px-4 py-2 text-xs font-mono font-bold text-white bg-[#BD93F9] hover:bg-[#A78BFA] disabled:opacity-50 disabled:cursor-not-allowed shadow-sm shadow-[#BD93F9]/10 rounded-lg transition-all cursor-pointer flex items-center gap-2"
+          >
+            {nlpLoading ? (
+              <>
+                <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                <span>Procesando Enunciado...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Formular problema con IA</span>
+              </>
+            )}
+          </button>
         </div>
       </div>
 
