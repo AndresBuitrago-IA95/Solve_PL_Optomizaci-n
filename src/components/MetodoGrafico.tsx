@@ -120,12 +120,38 @@ export default function MetodoGrafico({ config, result }: MetodoGraficoProps) {
 
   if (config.numVars !== 2) {
     return (
-      <div className="flex flex-col items-center justify-center p-12 text-center border border-dashed border-[#262626] rounded-xl bg-[#0F0F0F]">
-        <AlertCircle className="w-12 h-12 text-zinc-600 mb-3" />
-        <h4 className="font-bold text-white mb-1 font-mono text-sm uppercase">Método Gráfico No Disponible</h4>
-        <p className="text-zinc-500 text-xs max-w-sm font-sans">
-          El método gráfico está diseñado únicamente para problemas con exactamente 2 variables de decisión. Su modelo actual utiliza {config.numVars} variables.
+      <div className="border border-[#BD93F9]/20 bg-[#161224]/90 rounded-xl p-6 max-w-2xl mx-auto my-6 space-y-4">
+        <div className="flex items-center gap-3 border-b border-[#BD93F9]/15 pb-3">
+          <Layers className="w-6 h-6 text-[#BD93F9] shrink-0" />
+          <h4 className="font-bold text-white font-mono text-sm uppercase tracking-wider">El Método Gráfico No Aplica</h4>
+        </div>
+        
+        <p className="text-zinc-300 text-xs leading-relaxed">
+          El Método Gráfico de optimización lineal es una herramienta visual excelente, pero tiene limitaciones físicas y geométricas muy estrictas. Actualmente, su modelo tiene <strong>{config.numVars} variables de decisión</strong>, por lo que no es posible graficarlo debido a los siguientes fundamentos:
         </p>
+
+        <div className="space-y-4 pl-1">
+          <div className="bg-[#1C172E]/50 border border-[#BD93F9]/10 rounded-lg p-3.5 space-y-1.5">
+            <span className="text-[11px] font-bold text-[#BD93F9] font-mono block">1. Limitación Bidimensional de Pantallas (Ejes Ortogonales)</span>
+            <p className="text-[11px] text-zinc-400 leading-relaxed font-sans">
+              Para representar de forma comprensible un problema de optimización en 2D, se recurre a dos ejes cartesianos independientes: el eje de abscisas (<span className="font-mono text-[#FF79C6]">X₁</span>) y el eje de ordenadas (<span className="font-mono text-[#00FF9C]">X₂</span>). Cada variable agrega una dimensión espacial. Representar físicamente más de 2 variables requeriría proyecciones tridimensionales complejas o hiperespacios que escapan a las capacidades de un plano bidimensional convencional.
+            </p>
+          </div>
+
+          <div className="bg-[#1C172E]/50 border border-[#BD93F9]/10 rounded-lg p-3.5 space-y-1.5">
+            <span className="text-[11px] font-bold text-[#BD93F9] font-mono block">2. Geometría de Hiperplanos y Politopos Convexos</span>
+            <p className="text-[11px] text-zinc-400 leading-relaxed font-sans">
+              Con {config.numVars} variables de decisión, el espacio de soluciones factible es un politopo convexo situado en un hiperespacio de {config.numVars} dimensiones (<span className="font-mono">ℝ^{config.numVars}</span>). Los límites impuestos por las restricciones estructurales no son rectas simples, sino <strong>hiperplanos</strong> de dimensión <span className="font-mono">{config.numVars - 1}</span>. Es matemáticamente imposible proyectar estas intersecciones dimensionales en una pantalla web interactiva ordinaria conservando la geometría de esquinas y vértices factibles.
+            </p>
+          </div>
+        </div>
+        
+        <div className="bg-[#0D0814] rounded-lg p-3.5 border border-zinc-800 text-[10px] text-zinc-400 leading-relaxed space-y-1">
+          <div><strong>¿Cómo solucionarlo / Qué usar en su lugar?</strong></div>
+          <p>
+            Utilice la pestaña de <strong>Solución Simplex</strong>. El Método Simplex de programación lineal fue inventado por George Dantzig en 1947 justamente para resolver de forma algebraica y eficiente problemas multidimensionales con cualquier cantidad de variables (<span className="font-mono">N</span>) y restricciones (<span className="font-mono">M</span>) mediante iteraciones de tablas matriciales.
+          </p>
+        </div>
       </div>
     );
   }

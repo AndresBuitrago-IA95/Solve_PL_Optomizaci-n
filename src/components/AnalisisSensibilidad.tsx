@@ -11,9 +11,12 @@ interface AnalisisSensibilidadProps {
 export default function AnalisisSensibilidad({ config, result }: AnalisisSensibilidadProps) {
   if (!result || !result.iterations || result.iterations.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center p-12 text-center border border-dashed border-[#262626] rounded-xl bg-[#0F0F0F]">
-        <AlertCircle className="w-12 h-12 text-zinc-650 mb-3" />
-        <p className="text-zinc-400 font-medium font-mono text-sm">Resuelve un problema primero para ver el análisis de sensibilidad.</p>
+      <div className="flex flex-col items-center justify-center p-12 text-center border border-dashed border-[#2D2140] rounded-xl bg-[#130E20]/60 max-w-2xl mx-auto my-6">
+        <AlertCircle className="w-12 h-12 text-[#BD93F9] mb-4 animate-pulse" />
+        <h4 className="font-bold text-zinc-100 mb-2 font-mono text-sm uppercase tracking-wider">Aún no se ha calculado el problema</h4>
+        <p className="text-zinc-400 font-sans text-xs max-w-md leading-relaxed">
+          Para ver el Análisis de Sensibilidad, primero ingresa los datos del modelo en la pestaña de Formulación y haz clic en el botón <strong>Resolver</strong>.
+        </p>
       </div>
     );
   }
@@ -21,11 +24,49 @@ export default function AnalisisSensibilidad({ config, result }: AnalisisSensibi
   const finalIter = result.iterations[result.iterations.length - 1];
   if (!finalIter.isOptimal || result.status === 'unbounded' || result.status === 'infeasible') {
     return (
-      <div className="flex flex-col items-center justify-center p-12 text-center border border-[#FF79C6]/25 rounded-xl bg-[#2A101A]">
-        <AlertCircle className="w-12 h-12 text-[#FF79C6] mb-3" />
-        <p className="text-zinc-300 font-mono text-sm max-w-sm">
-          El Análisis de Sensibilidad sólo es válido para problemas con una solución óptima acotada y factible.
+      <div className="border border-[#FF79C6]/20 bg-[#1A0E1A]/95 rounded-xl p-6 max-w-2xl mx-auto my-6 space-y-4">
+        <div className="flex items-center gap-3 border-b border-[#FF79C6]/15 pb-3">
+          <AlertCircle className="w-6 h-6 text-[#FF5555] shrink-0" />
+          <h4 className="font-bold text-white font-mono text-sm uppercase tracking-wider">El Análisis de Sensibilidad No Aplica</h4>
+        </div>
+        
+        <p className="text-zinc-300 text-xs leading-relaxed">
+          La teoría matemática de sensibilidad (precios sombra, costos reducidos e intervalos de coeficientes) se deriva de la 
+          <strong> base óptima final</strong> del problema de Programación Lineal (teoremas de dualidad). En el estado actual de su modelo, no es posible aplicar este análisis debido a los siguientes motivos:
         </p>
+
+        <div className="space-y-3.5 pl-2">
+          {result.status === 'infeasible' && (
+            <div className="bg-[#2A0F1D]/60 border border-[#FF5555]/15 rounded-lg p-3.5">
+              <span className="text-[11px] font-bold text-[#FF5555] font-mono block mb-1">Causa: Modelo Infactible (Infeasible)</span>
+              <p className="text-[11px] text-zinc-400 leading-relaxed">
+                No existe un espacio de soluciones o región que satisfaga todas las restricciones de forma simultánea. Al no haber un área de soluciones factible, no hay un "punto óptimo" inicial en el cual evaluar el comportamiento de los recursos o coeficientes ante cambios unitarios en sus límites o coeficientes.
+              </p>
+            </div>
+          )}
+
+          {result.status === 'unbounded' && (
+            <div className="bg-[#2A0F1D]/60 border border-[#FF5555]/15 rounded-lg p-3.5">
+              <span className="text-[11px] font-bold text-[#FF5555] font-mono block mb-1">Causa: Modelo No Acotado (Unbounded)</span>
+              <p className="text-[11px] text-zinc-400 leading-relaxed">
+                La función objetivo puede crecer infinitamente sin restricciones físicas o matemáticas que limiten su valor en la dirección de optimización. Matemáticamente, no existe un término de parada óptimo en las variables básicas, impossibilitando el cálculo estable de coeficientes y precios sombra.
+              </p>
+            </div>
+          )}
+
+          {!finalIter.isOptimal && result.status !== 'infeasible' && result.status !== 'unbounded' && (
+            <div className="bg-[#2A0F1D]/60 border border-[#FF5555]/15 rounded-lg p-3.5">
+              <span className="text-[11px] font-bold text-[#FF5555] font-mono block mb-1">Causa: Solución Óptima No Alcanzada</span>
+              <p className="text-[11px] text-zinc-400 leading-relaxed">
+                El algoritmo Simplex no ha finalizado con éxito o el problema se detuvo en un estado de iteración inconcluso. El análisis de sensibilidad requiere estrictamente que el vector de precios sombra sea óptimo y cumpla las condiciones de optimalidad primal y dual simultáneamente.
+              </p>
+            </div>
+          )}
+        </div>
+        
+        <div className="bg-[#0D0814] rounded-lg p-3 border border-zinc-850 text-[10px] text-zinc-400 leading-relaxed">
+          <strong>Acción recomendada:</strong> Por favor revise el planteamiento de su problema. Compruebe los signos de desigualdad del modelo (ejem. evite contraponer restricciones imposibles), el valor de las disponibilidades de recursos (RHS) y asegúrese de que el sentido de optimización (Maximizar o Minimizar) coincida con los objetivos económicos de su modelo.
+        </div>
       </div>
     );
   }
