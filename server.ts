@@ -11,16 +11,21 @@ app.use(express.json());
 
 const PORT = 3000;
 
-// Initialize GoogleGenAI client (server side only)
-const apiKey = process.env.GEMINI_API_KEY;
-const ai = new GoogleGenAI({
-  apiKey: apiKey,
-  httpOptions: {
-    headers: {
-      "User-Agent": "aistudio-build",
+// Helper to lazily initialize GoogleGenAI client with key validation
+function getGeminiClient() {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || apiKey === "MY_GEMINI_API_KEY" || apiKey.trim() === "") {
+    throw new Error("El API key de Gemini (GEMINI_API_KEY) no está configurado. Por favor, añádelo en el panel 'Settings' > 'Secrets' de Google AI Studio para activar la formulación automática con Inteligencia Artificial.");
+  }
+  return new GoogleGenAI({
+    apiKey: apiKey,
+    httpOptions: {
+      headers: {
+        "User-Agent": "aistudio-build",
+      },
     },
-  },
-});
+  });
+}
 
 // NLP LP Parsing Endpoint
 app.post("/api/parse-lp", async (req: express.Request, res: express.Response) => {
@@ -30,6 +35,7 @@ app.post("/api/parse-lp", async (req: express.Request, res: express.Response) =>
   }
 
   try {
+    const ai = getGeminiClient();
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
       contents: `Analiza el siguiente problema de programación lineal de entrada y extrae la función objetivo y las restricciones estructurales.
@@ -77,7 +83,7 @@ Problema a parsear:
                     description: "Los coeficientes de cada variable en la restricción en orden X1, X2, X3... (debe tener el mismo tamaño que numVars)",
                   },
                   type: {
-                    type: Type.STRING,
+                     type: Type.STRING,
                     description: "El operador de la restricción: '<=' para menor o igual, '>=' para mayor o igual, '=' para igualdad",
                   },
                   rhs: {
@@ -94,7 +100,23 @@ Problema a parsear:
       },
     });
 
-    const parsedJson = JSON.parse(response.text?.trim() || "{}");
+    let rawText = response.text?.trim() || "{}";
+    // Strip markdown JSON code fence backticks if present
+    if (rawText.startsWith("```json")) {
+      rawText = rawText.substring(7);
+      if (rawText.endsWith("```")) {
+        rawText = rawText.substring(0, rawText.length - 3);
+      }
+      rawText = rawText.trim();
+    } else if (rawText.startsWith("```")) {
+      rawText = rawText.substring(3);
+      if (rawText.endsWith("```")) {
+        rawText = rawText.substring(0, rawText.length - 3);
+      }
+      rawText = rawText.trim();
+    }
+
+    const parsedJson = JSON.parse(rawText);
     res.json(parsedJson);
   } catch (error: any) {
     console.error("Error calling Gemini API:", error);

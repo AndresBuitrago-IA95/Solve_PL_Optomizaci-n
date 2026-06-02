@@ -34,7 +34,14 @@ export default function Formulario({ onSolve, onReset, config, setConfig }: Form
       });
 
       if (!response.ok) {
-        throw new Error('Error al procesar el texto con IA. Verifica tu conexión o reintenta.');
+        let errorMsgFromResponse = 'Error al procesar el texto con IA. Verifica tu conexión o reintenta.';
+        try {
+          const errData = await response.json();
+          if (errData && errData.error) {
+            errorMsgFromResponse = `Error de IA: ${errData.error}`;
+          }
+        } catch (_) {}
+        throw new Error(errorMsgFromResponse);
       }
 
       const data = await response.json();
